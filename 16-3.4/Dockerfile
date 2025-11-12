@@ -1,33 +1,57 @@
-#
-# NOTE: THIS DOCKERFILE IS GENERATED VIA "make update"! PLEASE DO NOT EDIT IT DIRECTLY.
-#
-
+# Base image: PostgreSQL 16 on Bullseye (amd64/arm64)
 FROM postgres:16-bullseye
 
 LABEL maintainer="PostGIS Project - https://postgis.net" \
-      org.opencontainers.image.description="PostGIS 3.4 spatial database extension with PostgreSQL 16 bullseye" \
+      org.opencontainers.image.description="PostGIS 3.4.3 spatial extension with PostgreSQL 16, built from source" \
       org.opencontainers.image.source="https://github.com/postgis/docker-postgis"
 
 ENV POSTGIS_MAJOR=3
-ENV POSTGIS_VERSION=3.4.3+dfsg-2.pgdg110+1
+ENV POSTGIS_VERSION=3.4.3
+ENV PG_MAJOR=16
 
+# Install build dependencies for PostGIS
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates software-properties-common wget \
-    && wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
-    && add-apt-repository "deb https://apt-archive.postgresql.org/pub/repos/apt/ bullseye-pgdg-archive main 16"
-
-
-RUN apt-get update \
-      && apt-cache showpkg postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
       && apt-get install -y --no-install-recommends \
-           # ca-certificates: for accessing remote raster files;
-           #   fix: https://github.com/postgis/docker-postgis/issues/307
-           ca-certificates \
-           \
-           postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR=$POSTGIS_VERSION \
-           postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR-scripts \
+      build-essential \
+      ca-certificates \
+      wget \
+      curl \
+      gnupg \
+      software-properties-common \
+      autoconf \
+      automake \
+      libtool \
+      pkg-config \
+      libxml2-dev \
+      libgeos-dev \
+      libproj-dev \
+      libgdal-dev \
+      libjson-c-dev \
+      libprotobuf-c-dev \
+      libsqlite3-dev \
+      libcurl4-openssl-dev \
+      libreadline-dev \
+      liblzma-dev \
+      libpcre2-dev \
+      bison \
+      flex \
+      postgresql-server-dev-$PG_MAJOR \
       && rm -rf /var/lib/apt/lists/*
 
+# Download and build PostGIS 3.4.3 from source
+WORKDIR /usr/src
+RUN wget -qO postgis.tar.gz "https://download.osgeo.org/postgis/source/postgis-$POSTGIS_VERSION.tar.gz" \
+      && tar xzf postgis.tar.gz \
+      && rm postgis.tar.gz \
+      && cd postgis-$POSTGIS_VERSION \
+      && ./configure --with-pgconfig=/usr/lib/postgresql/$PG_MAJOR/bin/pg_config --without-protobuf \
+      && make \
+      && make install
+
+# Clean up source directory
+RUN rm -rf /usr/src/postgis-$POSTGIS_VERSION
+
+# Init scripts directory
 RUN mkdir -p /docker-entrypoint-initdb.d
 COPY ./initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
 COPY ./update-postgis.sh /usr/local/bin
